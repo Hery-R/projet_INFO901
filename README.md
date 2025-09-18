@@ -78,7 +78,7 @@ Ce projet implémente un **système de communication distribué** en Python avec
 ### Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Hery-R/projet_INFO901.git
 cd projet_INFO901
 ```
 
@@ -199,19 +199,3 @@ P1 synchronisé avec 3 processus
 P2 synchronisé avec 3 processus
 ...
 ```
-
-## Points Techniques Importants
-
-1. **Cohérence Temporelle** : Utilisation de l'horloge logique de Lamport pour ordonner les événements
-2. **Absence d'Interblocage** : L'algorithme de Ricart-Agrawala garantit l'absence de deadlock
-3. **Équité** : Système de priorités basé sur timestamp + ID processus
-4. **Robustesse** : Timeouts et gestion d'erreurs pour éviter les blocages
-5. **Performance** : Structures de données efficaces (deque, sets) et synchronisation minimale
-
-## Extensions Possibles
-
-- Simulation de pannes de processus
-- Algorithmes de consensus (Raft, PBFT)
-- Communication réseau réelle (sockets)
-- Interface graphique pour visualisation
-- Métriques de performance et statistiques
