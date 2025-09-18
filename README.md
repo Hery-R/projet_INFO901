@@ -1,217 +1,97 @@
-# Projet INFO901 - Système de Communication Distribué
+# Projet INFO901 - Refactorisation Bus Asynchrone
 
-## Auteurs
+## Auteur
+**RASOAMIARAMANANA Hery ny aina**
 
-- **RASOAMIARAMANANA Hery ny aina**
-- **ROUSSEAU Maxime**
+## État Actuel - Étape 1 Complétée ✅
 
-## Description du Projet
+Ce projet est en cours de refactorisation pour séparer la logique métier de la communication.
 
-Ce projet implémente un **système de communication distribué** en Python avec les fonctionnalités suivantes :
+### Architecture Refactorisée
 
-- **Communication inter-processus** (point-à-point et diffusion)
-- **Synchronisation distribuée** (barrières de synchronisation)
-- **Exclusion mutuelle distribuée** (section critique)
-- **Gestion des messages** avec horloge logique de Lamport
-- **Tolérance aux pannes** avec timeouts et gestion d'erreurs
+```
+Process (logique métier)
+   ↓ délègue à
+Com (middleware communication)
+   ↓ utilise
+PyBus (bus d'événements)
+```
 
-## Architecture du Système
+### Composants
 
-### Classes Principales
+#### 1. **`Com.py`** - Middleware de Communication
+- Gestion centralisée de l'horloge de Lamport
+- Méthodes thread-safe : `incclock()`, `getclock()`, `update_clock_on_receive()`
+- Services de communication : `broadcast()`, `sendTo()`
+- Protection par mutex pour la concurrence
 
-1. **`Message.py`** - Encapsulation des messages
+#### 2. **`Process.py`** - Processus Métier Refactorisé
+- Logique métier du processus
+- Gestion de l'état de la section critique
+- Délégation de la communication au middleware `Com`
+- Test de section critique avec jeton en anneau
 
-   - Types de messages (normal, sync, section critique, broadcast, etc.)
-   - Horodatage avec horloge logique de Lamport
-   - Métadonnées (expéditeur, destinataire, contenu)
+#### 3. **Modules de Messages**
+- `LamportMessage.py` - Message de base avec timestamp
+- `BroadcastMessage.py` - Message de diffusion
+- `MessageTo.py` - Message dirigé
+- `CriticalSectionMessage.py` - Message de jeton
+- `CriticalSectionState.py` - États de section critique
 
-2. **`Mailbox.py`** - Boîte aux lettres thread-safe
-
-   - Réception et stockage des messages
-   - Méthodes de récupération (FIFO, par expéditeur, par type)
-   - Synchronisation avec conditions et verrous
-
-3. **`Com.py`** - Classe de communication principale
-
-   - Communication asynchrone (`sendTo`) et synchrone (`sendToSync`)
-   - Algorithme de synchronisation par barrière
-   - Exclusion mutuelle avec algorithme de Ricart-Agrawala
-   - Diffusion de messages (`broadcast`)
-
-4. **`Process.py`** - Processus distribués
-
-   - Hérite de `Thread` pour l'exécution parallèle
-   - Logique métier de chaque processus
-   - Gestion du cycle de vie
-
-5. **`main.py`** - Tests et démonstrations
-   - Scénarios de test complets
-   - Validation des fonctionnalités
-
-## Algorithmes Implémentés
-
-### 1. Synchronisation Distribuée
-
-- **Barrière de synchronisation** : Tous les processus doivent atteindre un point de synchronisation avant de continuer
-- Échange de messages `BARRIER` entre tous les processus
-- Attente active jusqu'à réception de tous les signaux
-
-### 2. Exclusion Mutuelle - Algorithme de Ricart-Agrawala
-
-- **Demande de section critique** : Envoi de requêtes à tous les processus
-- **Gestion des priorités** : Basée sur l'horloge logique et l'ID processus
-- **Réponses différées** : Les réponses sont différées si le processus est en SC ou a une priorité plus haute
-
-### 3. Horloge Logique de Lamport
-
-- Chaque processus maintient une horloge logique
-- Incrémentation à chaque événement local
-- Synchronisation lors de la réception de messages
+#### 4. **`Launcher.py`** - Point d'Entrée
+- Lance et coordonne plusieurs processus
+- Configuration par défaut : 3 processus, 5 secondes
 
 ## Installation et Utilisation
 
 ### Prérequis
-
-- Python 3.8 ou supérieur
-- Modules standard (threading, time, collections, enum, typing)
-
-### Installation
-
 ```bash
-git clone <repository-url>
-cd projet_INFO901
+# Activer l'environnement virtuel
+.venv\Scripts\activate
+
+# Installer les dépendances
+pip install pyeventbus3
 ```
 
 ### Exécution
-
-#### Test complet du système
-
 ```bash
-python main.py
+python Launcher.py
 ```
 
-#### Test du module Process seul
+## Fonctionnalités Validées ✅
 
-```bash
-python Process.py
-```
+1. **Horloge de Lamport** : Gérée par `Com` avec protection thread-safe
+2. **Communication** : `broadcast()` et `sendTo()` via `Com`
+3. **Section Critique** : Algorithme en anneau avec jeton fonctionnel
+4. **Séparation des responsabilités** : Process ↔ Com
 
-#### Utilisation programmatique
+## Prochaines Étapes 🚀
 
-```python
-from Com import Com
-from Process import Process, create_processes
+- **Étape 2** : Transférer la gestion de la section critique vers `Com`
+- **Étape 3** : Implémenter les services bloquants/non-bloquants
+- **Étape 4** : Ajouter la synchronisation globale
+- **Étape 5** : Gestion automatique de la numérotation des processus
 
-# Créer 3 processus
-processes = create_processes(3)
+## Tests
 
-# Laisser s'exécuter
-import time
-time.sleep(10)
+Le système utilise actuellement le test de **section critique avec jeton** pour valider :
+- L'exclusion mutuelle distribuée
+- La circulation correcte du jeton (P0 → P1 → P2 → P0)
+- Le respect des horloges de Lamport
+- La séparation Process/Com
 
-# Arrêter proprement
-from Process import stop_all_processes
-stop_all_processes(processes)
-```
-
-## Scénarios de Test
-
-### 1. Communication Basique
-
-- Création de 3 processus (P0, P1, P2)
-- Messages asynchrones et synchrones
-- Vérification des acquittements
-
-### 2. Synchronisation
-
-- Barrière de synchronisation entre tous les processus
-- Délais différents pour chaque processus
-- Vérification que tous attendent le dernier
-
-### 3. Section Critique
-
-- Accès concurrent à une ressource partagée
-- Vérification de l'exclusion mutuelle
-- Test avec plusieurs itérations par processus
-
-### 4. Diffusion (Broadcast)
-
-- Un processus diffuse à tous les autres
-- Réception par tous les destinataires
-- Vérification de la cohérence
-
-## Fonctionnalités Avancées
-
-### Gestion d'Erreurs
-
-- **Timeouts** sur les communications synchrones (5-10 secondes)
-- **Messages différés** remis en file d'attente
-- **Logging** détaillé des opérations
-
-### Thread Safety
-
-- Tous les accès partagés sont protégés par des verrous
-- Conditions de synchronisation pour l'attente de messages
-- Gestion propre des ressources
-
-### Extensibilité
-
-- Architecture modulaire facilement extensible
-- Types de messages configurables
-- Algorithmes d'exclusion mutuelle interchangeables
-
-## Structure des Fichiers
+## Structure du Projet
 
 ```
 projet_INFO901/
-├── README.md              # Documentation du projet
-├── main.py               # Tests et démonstrations
-├── Com.py                # Communication distribuée
-├── Message.py            # Encapsulation des messages
-├── Mailbox.py            # Boîte aux lettres thread-safe
-├── Process.py            # Processus distribués
-├── Exemple.py            # Code original (référence)
-└── sujet.pdf             # Énoncé du projet
+├── Process.py          # Processus métier refactorisé
+├── Com.py             # Middleware de communication
+├── Launcher.py        # Point d'entrée
+├── LamportMessage.py  # Message de base
+├── BroadcastMessage.py # Message diffusion
+├── MessageTo.py       # Message dirigé
+├── CriticalSectionMessage.py # Message jeton
+├── CriticalSectionState.py   # États SC
+├── TODO.txt          # Plan de refactorisation
+└── README.md         # Ce fichier
 ```
-
-## Exemple d'Exécution
-
-```
-=== SYSTÈME DE COMMUNICATION DISTRIBUÉ ===
-Démarrage des tests...
-
-=== TEST COMMUNICATION BASIQUE ===
-Processus P0 créé avec ID 0
-Processus P1 créé avec ID 1
-Processus P2 créé avec ID 2
-P0 -> P1: j'appelle 2 et je te recontacte après
-P0 -sync-> P2: J'ai laissé un message...
-P2 <-sync- P0: J'ai laissé un message...
-P0 <-sync-ack- P2
-...
-
-=== TEST SYNCHRONISATION ===
-P0 avant synchronisation - 1640995200.12
-P1 avant synchronisation - 1640995200.62
-P2 avant synchronisation - 1640995201.12
-P0 synchronisé avec 3 processus
-P1 synchronisé avec 3 processus
-P2 synchronisé avec 3 processus
-...
-```
-
-## Points Techniques Importants
-
-1. **Cohérence Temporelle** : Utilisation de l'horloge logique de Lamport pour ordonner les événements
-2. **Absence d'Interblocage** : L'algorithme de Ricart-Agrawala garantit l'absence de deadlock
-3. **Équité** : Système de priorités basé sur timestamp + ID processus
-4. **Robustesse** : Timeouts et gestion d'erreurs pour éviter les blocages
-5. **Performance** : Structures de données efficaces (deque, sets) et synchronisation minimale
-
-## Extensions Possibles
-
-- Simulation de pannes de processus
-- Algorithmes de consensus (Raft, PBFT)
-- Communication réseau réelle (sockets)
-- Interface graphique pour visualisation
-- Métriques de performance et statistiques

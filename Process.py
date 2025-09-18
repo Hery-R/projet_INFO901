@@ -1,15 +1,14 @@
 """
-Process.py - Processus principal du système distribué
-Auteur: RASOAMIARAMANANA Hery ny aina
+Process.py - Processus principal du système distribué refactorisé
+Auteur: RASOAMIARAMANANA Hery ny aina (refactorisé)
 
 Ce module implémente un processus dans un système distribué avec :
-- Horloges logiques de Lamport pour l'ordre des événements
-- Communication par bus d'événements asynchrone
+- Délégation de la communication au middleware Com
 - Algorithme en anneau avec jeton pour la section critique
-- Différents types de messages (broadcast, dirigés, jeton)
+- Logique métier séparée de la communication
 """
 
-from threading import Lock, Thread
+from threading import Thread
 from time import sleep
 import threading
 
@@ -18,17 +17,17 @@ from BroadcastMessage import BroadcastMessage
 from MessageTo import MessageTo
 from CriticalSectionMessage import TokenMessage
 from CriticalSectionState import CriticalSectionState
+from Com import Com
 from pyeventbus3.pyeventbus3 import *
 
 class Process(Thread):
     """
-    Processus dans un système distribué avec horloge de Lamport.
+    Processus dans un système distribué refactorisé.
     
-    Chaque processus :
-    - Maintient sa propre horloge logique de Lamport
-    - Communique via un bus d'événements asynchrone
-    - Peut participer à l'algorithme en anneau avec jeton
-    - Exécute différents tests de communication
+    Responsabilités :
+    - Logique métier du processus
+    - Gestion de l'état de la section critique
+    - Délégation de la communication au middleware Com
     """
 
     # Compteur global pour assigner des IDs uniques aux processus
@@ -57,9 +56,8 @@ class Process(Thread):
         # État du processus
         self.alive = True                            # Contrôle de la boucle principale
         
-        # Horloge logique de Lamport (règles de synchronisation)
-        self.lamport_clock = 0                       # Horloge locale initialisée à 0
-        self.lock = Lock()                           # Verrou pour l'accès concurrent
+        # Middleware de communication
+        self.com = Com(self.myId, self.myProcessName, self.npProcess)
         
         # === ALGORITHME EN ANNEAU AVEC JETON ===
         # État initial : tous les processus sont au repos sauf P0
@@ -85,12 +83,10 @@ class Process(Thread):
         Applique les règles de synchronisation de Lamport :
         - Réception : clock = max(clock_local, clock_message) + 1
         """
-        with self.lock:
-            # Règle de Lamport : mise à jour de l'horloge à la réception
-            old_clock = self.lamport_clock
-            self.lamport_clock = max(self.lamport_clock, event.getTimestamp()) + 1
+        # Utilisation du middleware Com pour la mise à jour de l'horloge
+        old_clock, new_clock = self.com.update_clock_on_receive(event.getTimestamp())
 
-        print(f"{threading.current_thread().name} Processes event with timestamp {event.getTimestamp()}: {event.getPayload()} (local clock: {old_clock} → {self.lamport_clock})")
+        print(f"{threading.current_thread().name} Processes event with timestamp {event.getTimestamp()}: {event.getPayload()} (local clock: {old_clock} → {new_clock})")
 
     def broadcast(self, payload):
         """
@@ -99,40 +95,33 @@ class Process(Thread):
         Args:
             payload (str): Contenu à diffuser
         """
-        # Règle de Lamport : incrémenter l'horloge pour un événement local
-        with self.lock:
-            self.lamport_clock += 1
-            current_clock = self.lamport_clock
-            
-        # Créer et envoyer le message de diffusion
-        msg = BroadcastMessage(current_clock, payload)
-        print(f"📢 {self.getName()} broadcast: {payload} with timestamp {current_clock}")
-        PyBus.Instance().post(msg)
+        # Déléguer au middleware Com
+        self.com.broadcast(payload)
 
     @subscribe(threadMode=Mode.PARALLEL, onEvent=BroadcastMessage)
     def onBroadcast(self, event):
-        with self.lock:
-            # Mise à jour horloge Lamport à la réception
-            self.lamport_clock = max(self.lamport_clock, event.getTimestamp()) + 1
-        print(f"{self.getName()} received broadcast: {event.getPayload()} (local clock: {self.lamport_clock})")
+        # Utilisation du middleware Com pour la mise à jour de l'horloge
+        old_clock, new_clock = self.com.update_clock_on_receive(event.getTimestamp())
+        print(f"{self.getName()} received broadcast: {event.getPayload()} (local clock: {new_clock})")
         
     
     def sendTo(self, payload, to):
-        # Incrémente horloge locale pour événement local d'envoi
-        with self.lock:
-            self.lamport_clock += 1
-            current_clock = self.lamport_clock
-        msg = MessageTo(current_clock, payload, to)
-        print(f"{self.getName()} sendTo {to}: {payload} with timestamp {current_clock}")
-        PyBus.Instance().post(msg)
+        """
+        Envoie un message à un processus spécifique.
+        
+        Args:
+            payload (str): Contenu du message
+            to (int): ID du processus destinataire
+        """
+        # Déléguer au middleware Com
+        self.com.sendTo(payload, to)
 
     @subscribe(threadMode=Mode.PARALLEL, onEvent=MessageTo)
     def onReceive(self, event):
         if event.getTo() == self.myId:
-            with self.lock:
-                # Mise à jour horloge Lamport à la réception
-                self.lamport_clock = max(self.lamport_clock, event.getTimestamp()) + 1
-            print(f"{self.getName()} received message for me: {event.getPayload()} (clock: {self.lamport_clock})")
+            # Utilisation du middleware Com pour la mise à jour de l'horloge
+            old_clock, new_clock = self.com.update_clock_on_receive(event.getTimestamp())
+            print(f"{self.getName()} received message for me: {event.getPayload()} (clock: {new_clock})")
         else:
             # Message pas pour ce process, on ignore
             pass
@@ -146,8 +135,7 @@ class Process(Thread):
         Dans l'algorithme en anneau, il suffit de marquer son intention.
         Le processus devra attendre de recevoir le jeton pour y accéder.
         """
-        with self.lock:
-            self.wants_cs = True  # Marquer l'intention d'entrer en SC
+        self.wants_cs = True  # Marquer l'intention d'entrer en SC
         print(f"🙋 {self.getName()} wants to enter critical section")
     
     def enter_critical_section(self):
@@ -162,12 +150,11 @@ class Process(Thread):
         Returns:
             bool: True si l'entrée a réussi, False sinon
         """
-        with self.lock:
-            # Vérifier toutes les conditions d'entrée
-            if self.has_token and self.wants_cs and self.cs_state == CriticalSectionState.HAS_TOKEN:
-                self.cs_state = CriticalSectionState.IN_CS
-                print(f"🔒 {self.getName()} ENTERS critical section with TOKEN")
-                return True
+        # Vérifier toutes les conditions d'entrée (pas besoin de lock pour la lecture)
+        if self.has_token and self.wants_cs and self.cs_state == CriticalSectionState.HAS_TOKEN:
+            self.cs_state = CriticalSectionState.IN_CS
+            print(f"🔒 {self.getName()} ENTERS critical section with TOKEN")
+            return True
         return False
     
     def exit_critical_section(self):
@@ -177,19 +164,16 @@ class Process(Thread):
         Actions :
         1. Vérifier qu'on est bien en section critique
         2. Marquer qu'on ne veut plus la SC
-        3. Repasser à l'état HAS_TOKEN temporairement
-        4. Transmettre le jeton au processus suivant
+        3. Transmettre le jeton au processus suivant
         """
-        with self.lock:
-            # Vérifier qu'on est bien en section critique
-            if self.cs_state != CriticalSectionState.IN_CS:
-                return
-            
-            print(f"🔓 {self.getName()} EXITS critical section")
-            self.wants_cs = False                           # Plus besoin de la SC
-            self.cs_state = CriticalSectionState.HAS_TOKEN  # État intermédiaire
+        # Vérifier qu'on est bien en section critique
+        if self.cs_state != CriticalSectionState.IN_CS:
+            return
         
-        # Transmettre le jeton au processus suivant dans l'anneau
+        print(f"🔓 {self.getName()} EXITS critical section")
+        self.wants_cs = False  # Plus besoin de la SC
+        
+        # Transmettre directement le jeton (qui mettra l'état à IDLE)
         self._pass_token()
     
     def _pass_token(self):
@@ -199,11 +183,10 @@ class Process(Thread):
             
         next_process_id = (self.myId + 1) % self.npProcess
         
-        with self.lock:
-            self.lamport_clock += 1
-            current_clock = self.lamport_clock
-            self.has_token = False
-            self.cs_state = CriticalSectionState.IDLE
+        # Utilisation du middleware Com pour incrémenter l'horloge
+        current_clock = self.com.incclock()
+        self.has_token = False
+        self.cs_state = CriticalSectionState.IDLE
         
         # Envoyer le jeton
         msg = TokenMessage(current_clock, self.myId, next_process_id)
@@ -214,11 +197,10 @@ class Process(Thread):
     def onTokenMessage(self, event):
         # Vérifier si le jeton est pour ce processus et si le processus est encore vivant
         if event.getToProcessId() == self.myId and self.alive:
-            with self.lock:
-                # Mise à jour horloge Lamport
-                self.lamport_clock = max(self.lamport_clock, event.getTimestamp()) + 1
-                self.has_token = True
-                self.cs_state = CriticalSectionState.HAS_TOKEN
+            # Utilisation du middleware Com pour la mise à jour de l'horloge
+            old_clock, new_clock = self.com.update_clock_on_receive(event.getTimestamp())
+            self.has_token = True
+            self.cs_state = CriticalSectionState.HAS_TOKEN
             
             print(f"{self.getName()} received TOKEN from P{event.getFromProcessId()}")
             
@@ -227,82 +209,13 @@ class Process(Thread):
                 sleep(0.1)  # Petite pause pour éviter la circulation trop rapide
                 self._pass_token()
     
-    # ====== TESTS DISPONIBLES ======
-    # Décommentez une seule méthode run() à la fois pour tester :
-    # 1. LamportMessage : Test basique des messages avec horloge de Lamport
-    # 2. BroadcastMessage : Test des messages de diffusion
-    # 3. MessageTo : Test des messages dirigés vers un processus spécifique  
-    # 4. Section Critique : Test de l'exclusion mutuelle avec jeton en anneau (actuellement actif)
-    
-    # ======  TEST POUR LAMPORT MESSAGE ======
-    # def run(self):
-    #     loop = 0
-    #     while self.alive:
-    #         with self.lock:
-    #             # Incrément horloge Lamport locale pour action locale
-    #             self.lamport_clock += 1
-    #             current_clock = self.lamport_clock
-            
-    #         print(f"{self.getName()} Loop: {loop} (clock {current_clock})")
-    #         sleep(1)
-
-    #         if self.myProcessName == "P1":
-    #             # Création d'un message avec estampillage Lamport
-    #             msg = LamportMessage(current_clock, "ga")
-    #             print(f"{self.getName()} send: {msg.getPayload()} with timestamp {msg.getTimestamp()}")
-    #             PyBus.Instance().post(msg)
-
-    #         loop += 1
-    #     print(f"{self.getName()} stopped")
-    
-    
-    # ======  TEST POUR BROADCAST MESSAGE ======
-    # def run(self):
-    #     loop = 0
-    #     while self.alive:
-    #         with self.lock:
-    #             self.lamport_clock += 1
-    #             current_clock = self.lamport_clock
-            
-    #         print(f"{self.getName()} Loop: {loop} (clock {current_clock})")
-
-    #         # Le broadcast se fait tous les 3 tours pour test
-    #         if self.myProcessName == "P1" and loop % 3 == 0:
-    #             self.broadcast(f"Broadcast message at loop {loop}")
-
-    #         sleep(1)
-    #         loop += 1
-    #     print(f"{self.getName()} stopped")
-
-    
-    # ======  TEST POUR MESSAGE TO ======
-    # def run(self):
-    #     loop = 0
-    #     while self.alive:
-    #         with self.lock:
-    #             self.lamport_clock += 1
-    #             current_clock = self.lamport_clock
-
-    #         print(f"{self.getName()} Loop: {loop} (clock {current_clock})")
-
-    #         if self.myProcessName == "P1" and loop % 4 == 0:
-    #             # Envoyer un message dédié au process P2 (id 2)
-    #             self.sendTo(f"MessageTo P2 at loop {loop}", 2)
-
-    #         sleep(1)
-    #         loop += 1
-    #     print(f"{self.getName()} stopped")
-
-    
-    # ======  TEST POUR SECTION CRITIQUE AVEC JETON ======
     def run(self):
         loop = 0
         while self.alive:
-            with self.lock:
-                self.lamport_clock += 1
-                current_clock = self.lamport_clock
-                token_status = "WITH_TOKEN" if self.has_token else "NO_TOKEN"
-                wants_status = "WANTS_CS" if self.wants_cs else "NO_REQUEST"
+            # Utilisation du middleware Com pour incrémenter l'horloge
+            current_clock = self.com.incclock()
+            token_status = "WITH_TOKEN" if self.has_token else "NO_TOKEN"
+            wants_status = "WANTS_CS" if self.wants_cs else "NO_REQUEST"
 
             print(f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {self.cs_state.value} - {token_status} - {wants_status}")
 

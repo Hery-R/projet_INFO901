@@ -15,6 +15,7 @@ class CriticalSectionState(Enum):
     Transitions possibles :
     IDLE → HAS_TOKEN (réception du jeton)
     HAS_TOKEN → IN_CS (entrée en section critique)
+    HAS_TOKEN → IDLE (transmission du jeton sans utiliser la SC)
     IN_CS → IDLE (sortie de section critique et transmission du jeton)
     """
     
