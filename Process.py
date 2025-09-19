@@ -59,17 +59,6 @@ class Process(Thread):
         # Middleware de communication
         self.com = Com(self.myId, self.myProcessName, self.npProcess)
         
-        # === ALGORITHME EN ANNEAU AVEC JETON ===
-        # État initial : tous les processus sont au repos sauf P0
-        self.cs_state = CriticalSectionState.IDLE
-        self.has_token = (self.myId == 0)           # P0 commence avec le jeton
-        self.wants_cs = False                       # Pas de demande de SC au début
-        
-        # Si ce processus a le jeton au démarrage, changer son état
-        if self.has_token:
-            self.cs_state = CriticalSectionState.HAS_TOKEN
-            print(f"🎯 {self.getName()} starts WITH the token")
-        
         # Démarrer le thread du processus
         self.start()
 
@@ -129,102 +118,51 @@ class Process(Thread):
     # === ALGORITHME EN ANNEAU AVEC JETON POUR SECTION CRITIQUE ===
     
     def request_critical_section(self):
-        """
-        Demande d'accès à la section critique.
-        
-        Dans l'algorithme en anneau, il suffit de marquer son intention.
-        Le processus devra attendre de recevoir le jeton pour y accéder.
-        """
-        self.wants_cs = True  # Marquer l'intention d'entrer en SC
-        print(f"🙋 {self.getName()} wants to enter critical section")
+        """Demande d'accès à la section critique via Com"""
+        self.com.requestSC()
     
     def enter_critical_section(self):
-        """
-        Tentative d'entrée en section critique.
-        
-        Conditions requises :
-        1. Posséder le jeton (has_token = True)
-        2. Vouloir entrer en SC (wants_cs = True)  
-        3. Être dans l'état HAS_TOKEN
-        
-        Returns:
-            bool: True si l'entrée a réussi, False sinon
-        """
-        # Vérifier toutes les conditions d'entrée (pas besoin de lock pour la lecture)
-        if self.has_token and self.wants_cs and self.cs_state == CriticalSectionState.HAS_TOKEN:
-            self.cs_state = CriticalSectionState.IN_CS
-            print(f"🔒 {self.getName()} ENTERS critical section with TOKEN")
-            return True
-        return False
+        """Tentative d'entrée en section critique via Com"""
+        return self.com.trySC()
     
     def exit_critical_section(self):
-        """
-        Sortie de la section critique et transmission du jeton.
-        
-        Actions :
-        1. Vérifier qu'on est bien en section critique
-        2. Marquer qu'on ne veut plus la SC
-        3. Transmettre le jeton au processus suivant
-        """
-        # Vérifier qu'on est bien en section critique
-        if self.cs_state != CriticalSectionState.IN_CS:
-            return
-        
-        print(f"🔓 {self.getName()} EXITS critical section")
-        self.wants_cs = False  # Plus besoin de la SC
-        
-        # Transmettre directement le jeton (qui mettra l'état à IDLE)
-        self._pass_token()
-    
-    def _pass_token(self):
-        """Passer le jeton au processus suivant dans l'anneau"""
-        if not self.alive:  # Ne pas passer le jeton si le processus s'arrête
-            return
-            
-        next_process_id = (self.myId + 1) % self.npProcess
-        
-        # Utilisation du middleware Com pour incrémenter l'horloge
-        current_clock = self.com.incclock()
-        self.has_token = False
-        self.cs_state = CriticalSectionState.IDLE
-        
-        # Envoyer le jeton
-        msg = TokenMessage(current_clock, self.myId, next_process_id)
-        print(f"{self.getName()} passes TOKEN to P{next_process_id}")
-        PyBus.Instance().post(msg)
+        """Sortie de la section critique via Com"""
+        self.com.releaseSC()
     
     @subscribe(threadMode=Mode.PARALLEL, onEvent=TokenMessage)
     def onTokenMessage(self, event):
         # Vérifier si le jeton est pour ce processus et si le processus est encore vivant
         if event.getToProcessId() == self.myId and self.alive:
-            # Utilisation du middleware Com pour la mise à jour de l'horloge
-            old_clock, new_clock = self.com.update_clock_on_receive(event.getTimestamp())
-            self.has_token = True
-            self.cs_state = CriticalSectionState.HAS_TOKEN
-            
-            print(f"{self.getName()} received TOKEN from P{event.getFromProcessId()}")
+            # Déléguer la réception du jeton au middleware Com
+            should_pass_immediately = self.com.receive_token(
+                event.getFromProcessId(), 
+                event.getTimestamp()
+            )
             
             # Si on ne veut pas la section critique, passer le jeton immédiatement
-            if not self.wants_cs and self.alive:
+            if should_pass_immediately and self.alive:
                 sleep(0.1)  # Petite pause pour éviter la circulation trop rapide
-                self._pass_token()
+                self.com._pass_token()
     
     def run(self):
         loop = 0
         while self.alive:
             # Utilisation du middleware Com pour incrémenter l'horloge
             current_clock = self.com.incclock()
-            token_status = "WITH_TOKEN" if self.has_token else "NO_TOKEN"
-            wants_status = "WANTS_CS" if self.wants_cs else "NO_REQUEST"
+            
+            # Récupérer l'état de la section critique depuis Com
+            cs_status = self.com.get_cs_status()
+            token_status = "WITH_TOKEN" if cs_status['has_token'] else "NO_TOKEN"
+            wants_status = "WANTS_CS" if cs_status['wants_cs'] else "NO_REQUEST"
 
-            print(f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {self.cs_state.value} - {token_status} - {wants_status}")
+            print(f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {cs_status['state'].value} - {token_status} - {wants_status}")
 
             # Test de la section critique avec jeton : demander périodiquement
-            if loop % 5 == self.myId and not self.wants_cs:  # Décalage pour éviter les demandes simultanées
+            if loop % 5 == self.myId and not cs_status['wants_cs']:  # Décalage pour éviter les demandes simultanées
                 self.request_critical_section()
             
             # Si on a le jeton et qu'on veut la section critique, y entrer
-            if self.cs_state == CriticalSectionState.HAS_TOKEN and self.wants_cs:
+            if cs_status['state'] == CriticalSectionState.HAS_TOKEN and cs_status['wants_cs']:
                 if self.enter_critical_section():
                     # Simuler du travail en section critique
                     print(f"{self.getName()} *** WORKING IN CRITICAL SECTION ***")
