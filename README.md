@@ -11,7 +11,7 @@ Ce projet implémente un système distribué complet avec middleware de communic
 
 ## Architecture Générale
 
-```
+```text
 Process (logique métier)
    ↓ délègue à
 Com (middleware communication)
@@ -403,7 +403,7 @@ python Launcher.py
 
 ### Sortie Typique
 
-```
+```text
 Lancement de 3 processus pour 5 secondes...
 ProcessIDManager initialized - Ready for automatic numbering
 Assigned process ID: 0
