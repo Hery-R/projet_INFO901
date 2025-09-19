@@ -1,4 +1,4 @@
-# Projet INFO901 - Systeme Distribue avec Middleware de Communication
+# Projet INFO901 - Système Distribué avec Middleware de Communication
 
 ## Auteurs
 
@@ -7,46 +7,134 @@
 
 ## Vue d'ensemble
 
-Ce projet implemente un systeme distribue complet avec middleware de communication. Le systeme utilise une architecture a base de bus d'evenements (PyBus) pour la communication asynchrone entre processus, avec gestion automatique de la synchronisation temporelle (horloges de Lamport) et exclusion mutuelle distribuee (algorithme en anneau avec jeton).
+Ce projet implémente un système distribué complet avec middleware de communication, respectant les spécifications du TP INFO901. Le système utilise une architecture basée sur un bus d'événements (PyBus) pour la communication asynchrone entre processus, avec gestion automatique de la synchronisation temporelle (horloges de Lamport) et exclusion mutuelle distribuée (algorithme en anneau avec jeton).
 
-## Architecture Generale
+## Architecture Générale
 
 ```
-Process (logique metier)
-   ↓ delegue a
+Process (logique métier)
+   ↓ délègue à
 Com (middleware communication)
    ↓ utilise
-PyBus (bus d'evenements)
+PyBus (bus d'événements)
    ↓
 MessageDistributor (routage intelligent)
    ↓
 Mailbox (stockage asynchrone)
    ↓
-Process (consommation a son rythme)
+Process (consommation à son rythme)
 ```
 
-### Separation des Responsabilites
+### Séparation des Responsabilités
 
-Cette architecture respecte le principe de separation des responsabilites :
+Cette architecture respecte le principe de séparation des responsabilités :
 
-- **Process** : Logique metier et traitement des messages
-- **Com** : Middleware de communication centralise
-- **PyBus** : Transport global d'evenements
+- **Process** : Logique métier et traitement des messages
+- **Com** : Middleware de communication centralisé
+- **PyBus** : Transport global d'événements
 - **MessageDistributor** : Routage intelligent des messages
 - **Mailbox** : Stockage asynchrone par processus
 
-## Concepts du TP et leur Implementation
+## Composants Principaux Détaillés
+
+### 1. Launcher.py
+
+**Rôle** : Point d'entrée principal. Initialise et gère le cycle de vie des processus.
+
+**Fonctionnalités** :
+
+- Crée un nombre spécifié de processus (Process)
+- Initialise le MessageDistributor et le gestionnaire d'IDs (ProcessIDManager)
+- Initialise la synchronisation globale via Com.initialize_sync()
+- Démarre tous les processus en tant que threads
+- Attend une durée définie, puis arrête tous les processus proprement
+
+### 2. Process.py
+
+**Rôle** : Représente un processus logique dans le système distribué. Chaque instance de Process est un thread Python.
+
+**Fonctionnalités** :
+
+- Initialise une instance du middleware Com qui lui attribue un ID unique
+- Contient la logique métier du processus (simulée par une boucle run)
+- Délègue toutes les opérations de communication et de synchronisation à son instance Com
+- Traite les messages reçus via une boîte aux lettres (Mailbox) gérée par Com
+- Implémente la logique de demande et de libération de section critique en lançant un thread séparé pour requestSC() car cette méthode est bloquante
+- Gère son propre cycle de vie (alive, stop, waitStopped)
+
+### 3. Com.py (Middleware de Communication)
+
+**Rôle** : Agit comme un middleware centralisé pour chaque Process, gérant la logique de communication, de synchronisation et de section critique.
+
+**Fonctionnalités** :
+
+- **Numérotation Automatique** : Utilise ProcessIDManager pour attribuer un ID unique et consécutif à chaque processus
+- **Horloge de Lamport** : Gère une horloge logique de Lamport thread-safe (lamport_clock) avec des méthodes pour incrémenter (incclock) et mettre à jour à la réception de messages (update_clock_on_receive)
+- **Boîte aux Lettres (Mailbox)** : Chaque instance de Com possède une Mailbox pour son processus associé, où les messages asynchrones sont déposés
+- **Communication Asynchrone** : Fournit des méthodes broadcast et sendTo qui utilisent PyBus pour envoyer des messages
+- **Section Critique Distribuée** : Implémente un algorithme en anneau avec jeton
+  - requestSC() : Bloque le processus jusqu'à l'obtention du jeton et l'entrée en section critique
+  - releaseSC() : Libère la section critique et passe le jeton au processus suivant
+  - Utilise un Condition (cs_condition) pour la synchronisation des threads attendant la SC
+  - P0 démarre avec le jeton
+- **Synchronisation Globale** : Implémente une barrière de synchronisation (synchronize()) qui bloque tous les processus jusqu'à ce qu'ils l'aient tous invoquée
+- **Communication Synchrone** : Fournit des méthodes broadcastSyncObject, sendToSyncObject, recevFromSyncObject qui combinent l'envoi/réception de messages avec la barrière de synchronisation globale
+
+### 4. MessageDistributor.py
+
+**Rôle** : Un singleton qui s'enregistre au PyBus global et route les messages vers les Mailbox appropriées.
+
+**Fonctionnalités** :
+
+- S'abonne à différents types de messages (BroadcastMessage, MessageTo, TokenMessage) via PyBus
+- Distribue les messages reçus à la Mailbox du processus destinataire (pour MessageTo et TokenMessage) ou à toutes les Mailbox (pour BroadcastMessage)
+- Utilise des threads parallèles (Mode.PARALLEL) pour la distribution des messages
+
+### 5. Mailbox.py
+
+**Rôle** : Fournit une file d'attente thread-safe pour les messages asynchrones destinés à un processus spécifique.
+
+**Fonctionnalités** :
+
+- deposit_message() : Ajoute un message à la file d'attente et notifie les threads en attente
+- get_message() : Récupère un message sans bloquer
+- wait_for_message() : Bloque jusqu'à ce qu'un message soit disponible ou qu'un timeout expire
+- Utilise deque pour la file d'attente et Lock/Condition pour la thread-safety
+
+### 6. ProcessIDManager.py
+
+**Rôle** : Un singleton qui attribue des IDs uniques et consécutifs aux processus.
+
+**Fonctionnalités** :
+
+- get_next_id() : Retourne le prochain ID disponible de manière thread-safe
+- reset() : Réinitialise le compteur d'IDs (utilisé pour les tests)
+
+### 7. Classes de Messages
+
+**Rôle** : Définissent la structure des différents types de messages échangés dans le système.
+
+- **LamportMessage** : Classe de base pour tous les messages, incluant un timestamp de Lamport et un payload
+- **BroadcastMessage** : Message destiné à tous les processus
+- **MessageTo** : Message destiné à un processus spécifique
+- **TokenMessage** : Message spécial représentant le jeton pour l'algorithme de section critique
+
+### 8. CriticalSectionState.py
+
+**Rôle** : Énumération définissant les états possibles d'un processus par rapport à la section critique (IDLE, HAS_TOKEN, IN_CS).
+
+## Concepts du TP et leur Implémentation
 
 ### 1. Horloges de Lamport
 
-**Concept** : Synchronisation temporelle logique dans un systeme distribue sans horloge globale.
+**Concept** : Synchronisation temporelle logique dans un système distribué sans horloge globale.
 
-**Implementation** :
+**Implémentation** :
 
-- Chaque processus maintient une horloge logique locale (`lamport_clock`)
-- Incrementation avant chaque envoi de message (`incclock()`)
-- Mise a jour a la reception selon la regle : `max(horloge_locale, horloge_message) + 1`
-- Protection thread-safe avec mutex (`Lock`)
+- Chaque processus maintient une horloge logique locale (lamport_clock)
+- Incrémentation avant chaque envoi de message (incclock())
+- Mise à jour à la réception selon la règle : max(horloge_locale, horloge_message) + 1
+- Protection thread-safe avec mutex (Lock)
 
 ```python
 def incclock(self):
@@ -63,13 +151,13 @@ def update_clock_on_receive(self, received_timestamp):
 
 ### 2. Communication Asynchrone
 
-**Concept** : Echange de messages sans blocage des processus emetteurs.
+**Concept** : Échange de messages sans blocage des processus émetteurs.
 
-**Implementation** :
+**Implémentation** :
 
-- Bus d'evenements PyBus pour le transport global
-- Boites aux lettres (Mailbox) pour chaque processus
-- Communication non-bloquante pour l'emetteur
+- Bus d'événements PyBus pour le transport global
+- Boîtes aux lettres (Mailbox) pour chaque processus
+- Communication non-bloquante pour l'émetteur
 
 ```python
 # Envoi (non-bloquant)
@@ -82,35 +170,35 @@ def broadcast(self, payload):
 ### 3. PyBus et @subscribe : Architecture de Communication
 
 **Pourquoi PyBus ?**
-PyBus est un bus d'evenements qui permet :
+PyBus est un bus d'événements qui permet :
 
-- Communication decouplee entre composants
+- Communication découplée entre composants
 - Publication/abonnement (publish/subscribe) pattern
 - Gestion automatique des threads
-- Extensibilite pour nouveaux types de messages
+- Extensibilité pour nouveaux types de messages
 
-**Implementation du pattern publish/subscribe** :
+**Implémentation du pattern publish/subscribe** :
 
 ```python
-# Dans MessageDistributor.py - Abonnement aux evenements
+# Dans MessageDistributor.py - Abonnement aux événements
 @subscribe(threadMode=Mode.PARALLEL, onEvent=BroadcastMessage)
 def distribute_broadcast(self, event):
-    # Reception automatique de tous les messages de diffusion
+    # Réception automatique de tous les messages de diffusion
     for process_id, mailbox in self.mailboxes.items():
         mailbox.deposit_message(event)
 
 @subscribe(threadMode=Mode.PARALLEL, onEvent=MessageTo)
 def distribute_directed_message(self, event):
-    # Reception automatique des messages diriges
+    # Réception automatique des messages dirigés
     destination_id = event.getTo()
     if destination_id in self.mailboxes:
-        self.mailboxes[destination_id].deposit_message(event)
+        mailbox.deposit_message(event)
 ```
 
 **Publication sur le bus** :
 
 ```python
-# Dans Com.py - Publication d'evenements
+# Dans Com.py - Publication d'événements
 def broadcast(self, payload):
     msg = BroadcastMessage(current_clock, payload)
     PyBus.Instance().post(msg)  # Publication sur le bus
@@ -122,18 +210,18 @@ def sendTo(self, payload, destination_id):
 
 **Avantages de cette architecture** :
 
-- **Decouplage complet** : Emetteurs et recepteurs ne se connaissent pas
-- **Extensibilite** : Ajout de nouveaux types de messages facile
-- **Performance** : Traitement parallele des messages
-- **Robustesse** : Un seul point d'ecoute (MessageDistributor)
+- **Découplage complet** : Émetteurs et recepteurs ne se connaissent pas
+- **Extensibilité** : Ajout de nouveaux types de messages facile
+- **Performance** : Traitement parallèle des messages
+- **Robustesse** : Un seul point d'écoute (MessageDistributor)
 
-### 4. Boites aux Lettres (Mailbox)
+### 4. Boîtes aux Lettres (Mailbox)
 
 **Concept** : Stockage asynchrone des messages pour chaque processus.
 
-**Implementation** :
+**Implémentation** :
 
-- File FIFO thread-safe (`collections.deque`)
+- File FIFO thread-safe (collections.deque)
 - Condition variables pour l'attente de messages
 - Interface non-bloquante et bloquante
 
@@ -141,7 +229,7 @@ def sendTo(self, payload, destination_id):
 def deposit_message(self, message):
     with self.condition:
         self.messages.append(message)
-        self.condition.notify_all()  # Reveil des threads en attente
+        self.condition.notify_all()  # Réveil des threads en attente
 
 def wait_for_message(self, timeout=None):
     with self.condition:
@@ -151,15 +239,15 @@ def wait_for_message(self, timeout=None):
         return self.messages.popleft()
 ```
 
-### 5. Section Critique Distribuee
+### 5. Section Critique Distribuée
 
-**Concept** : Exclusion mutuelle dans un systeme distribue.
+**Concept** : Exclusion mutuelle dans un système distribué.
 
-**Implementation** : Algorithme en anneau avec jeton
+**Implémentation** : Algorithme en anneau avec jeton
 
 - Un seul jeton circule dans l'anneau (P0 → P1 → P2 → P0)
 - Possession du jeton = droit d'entrer en section critique
-- Transmission automatique du jeton apres sortie
+- Transmission automatique du jeton après sortie
 
 ```python
 def requestSC(self):
@@ -176,12 +264,12 @@ def releaseSC(self):
 
 ### 6. Synchronisation Globale
 
-**Concept** : Barriere de synchronisation pour coordonner tous les processus.
+**Concept** : Barrière de synchronisation pour coordonner tous les processus.
 
-**Implementation** : Variables de classe partagees avec condition
+**Implémentation** : Variables de classe partagées avec condition
 
-- Compteur global du nombre de processus synchronises
-- Attente collective jusqu'a ce que tous arrivent a la barriere
+- Compteur global du nombre de processus synchronisés
+- Attente collective jusqu'à ce que tous arrivent à la barrière
 
 ```python
 def synchronize(self):
@@ -194,14 +282,14 @@ def synchronize(self):
             Com._sync_condition.wait()
 ```
 
-### 7. Numerotation Automatique
+### 7. Numérotation Automatique
 
 **Concept** : Attribution automatique d'identifiants uniques sans variables de classe.
 
-**Implementation** : Pattern Singleton avec variables d'instance
+**Implémentation** : Pattern Singleton avec variables d'instance
 
-- Gestionnaire centralise (ProcessIDManager)
-- Attribution sequentielle (0, 1, 2, ...)
+- Gestionnaire centralisé (ProcessIDManager)
+- Attribution séquentielle (0, 1, 2, ...)
 - Thread-safe avec mutex
 
 ```python
@@ -217,9 +305,49 @@ class ProcessIDManager:
             return assigned_id
 ```
 
+## Flux de Communication et de Synchronisation
+
+### Démarrage
+
+Launcher crée les Process. Chaque Process initialise son Com qui obtient un ID via ProcessIDManager et enregistre sa Mailbox auprès du MessageDistributor.
+
+### Envoi de Message
+
+Un Process appelle une méthode de communication sur son Com (ex: broadcast, sendTo).
+
+### Horloge de Lamport
+
+Com incrémente son horloge de Lamport et l'inclut dans le message.
+
+### Publication sur PyBus
+
+Com publie le message sur le PyBus global.
+
+### Distribution
+
+MessageDistributor intercepte le message et le dépose dans la Mailbox du ou des processus destinataires.
+
+### Réception de Message
+
+Le Process (dans sa boucle run) récupère les messages de sa Mailbox via Com.get_message().
+
+### Mise à jour Horloge
+
+Lors de la réception, Com met à jour l'horloge de Lamport du processus en fonction du timestamp du message reçu.
+
+### Section Critique
+
+- Un Process demande la SC via com.requestSC(). Cette méthode est bloquante et est exécutée dans un thread séparé pour ne pas bloquer la boucle principale du Process
+- Com gère l'état du jeton (has_token, wants_cs, cs_state) et utilise une Condition pour bloquer/débloquer les threads
+- Le jeton (TokenMessage) circule via PyBus et est distribué par MessageDistributor
+
+### Synchronisation
+
+Les méthodes synchrones (broadcastSyncObject, sendToSyncObject, recevFromSyncObject) utilisent une barrière de synchronisation globale (Com.\_sync_condition) pour s'assurer que tous les processus atteignent un certain point avant de continuer.
+
 ## Communication Synchrone
 
-Le systeme implemente egalement des methodes de communication synchrone utilisant la synchronisation globale :
+Le système implémente également des méthodes de communication synchrone utilisant la synchronisation globale :
 
 ```python
 def broadcastSyncObject(self, payload, from_process_id):
@@ -228,36 +356,44 @@ def broadcastSyncObject(self, payload, from_process_id):
         self.synchronize()  # Attente que tous recoivent
     else:
         self.wait_for_message()
-        self.synchronize()  # Confirmation de reception
+        self.synchronize()  # Confirmation de réception
 ```
+
+## Gestion des Threads
+
+- Chaque Process est un Thread Python
+- La méthode run() de Process contient la boucle principale du processus
+- Les demandes de section critique (requestSC()) sont lancées dans des threads séparés (CS-Thread) pour éviter de bloquer le thread principal du Process
+- Le MessageDistributor utilise Mode.PARALLEL pour ses abonnements PyBus, ce qui signifie que la distribution des messages se fait dans des threads séparés
+- Des Lock et Condition sont utilisés dans Com et Mailbox pour assurer la thread-safety des ressources partagées (horloge de Lamport, mailbox, état de la section critique, barrière de synchronisation)
 
 ## Structure des Fichiers
 
-### Noyau du Systeme
+### Noyau du Système
 
-- `Process.py` : Processus principal avec logique metier
-- `Com.py` : Middleware de communication centralise
-- `Launcher.py` : Point d'entree et orchestration
+- `Process.py` : Processus principal avec logique métier
+- `Com.py` : Middleware de communication centralisé
+- `Launcher.py` : Point d'entrée et orchestration
 
 ### Communication
 
-- `PyBus` : Bus d'evenements (bibliotheque externe)
+- `PyBus` : Bus d'événements (bibliothèque externe)
 - `MessageDistributor.py` : Routage intelligent des messages
 - `Mailbox.py` : Stockage asynchrone par processus
 
 ### Messages
 
 - `LamportMessage.py` : Classe de base avec timestamp
-- `BroadcastMessage.py` : Messages de diffusion generale
-- `MessageTo.py` : Messages diriges vers un destinataire
+- `BroadcastMessage.py` : Messages de diffusion générale
+- `MessageTo.py` : Messages dirigés vers un destinataire
 - `CriticalSectionMessage.py` : Messages de jeton pour SC
 
-### Gestion d'Etat
+### Gestion d'État
 
-- `CriticalSectionState.py` : Etats des processus en section critique
-- `ProcessIDManager.py` : Numerotation automatique des processus
+- `CriticalSectionState.py` : États des processus en section critique
+- `ProcessIDManager.py` : Numérotation automatique des processus
 
-## Execution et Tests
+## Exécution et Tests
 
 ### Lancement
 
@@ -274,6 +410,6 @@ Assigned process ID: 0
 Mailbox created for P0 (ID: 0)
 P0 starts WITH the token
 Com middleware initialized for P0 (ID: 0)
-Processus P0 cree avec ID automatique: 0
+Processus P0 créé avec ID automatique: 0
 [... tests de communication synchrone ...]
 ```
