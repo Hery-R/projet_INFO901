@@ -169,19 +169,19 @@ class Process(Thread):
 
     def broadcast_sync(self, payload):
         """Broadcast synchrone - ce processus est l'émetteur"""
-        self.com.broadcastSync(payload, self.myId)
+        self.com.broadcastSyncObject(payload, self.myId)
 
     def wait_broadcast_sync(self, from_process_id, payload):
         """Attendre un broadcast synchrone d'un processus spécifique"""
-        self.com.broadcastSync(payload, from_process_id)
+        self.com.broadcastSyncObject(payload, from_process_id)
 
     def send_to_sync(self, payload, destination_id):
         """Envoi synchrone à un processus"""
-        self.com.sendToSync(payload, destination_id)
+        self.com.sendToSyncObject(payload, destination_id)
 
     def receive_from_sync(self, from_process_id):
         """Réception synchrone depuis un processus"""
-        return self.com.receiveFromSync(from_process_id)
+        return self.com.recevFromSyncObject(from_process_id)
 
     # Les handlers PyBus ont été remplacés par le traitement via mailbox
 
@@ -202,12 +202,16 @@ class Process(Thread):
             print(
                 f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {cs_status['state'].value} - {token_status} - {wants_status}")
 
-            # Test de synchronisation : processus arrivent de manière décalée
-            if (loop == 2 and self.myId == 0) or (loop == 3 and self.myId == 1) or (loop == 4 and self.myId == 2):
-                print(
-                    f"🔄 {self.getName()} calling synchronize() at loop {loop}...")
-                self.synchronize()
-                print(f"✅ {self.getName()} synchronized! Continuing...")
+            # Test des méthodes de communication synchrone avec barrière
+            if loop == 2:
+                print(f"🧪 {self.getName()} testing synchronous communication...")
+                if self.myId == 0:  # P0 est l'émetteur
+                    print(f"📢 {self.getName()} testing broadcast sync")
+                    self.broadcast_sync("Test broadcast message")
+                else:  # P1 et P2 participent au broadcast sync
+                    print(f"👂 {self.getName()} participating in broadcast sync test")
+                    # P1 et P2 attendent de recevoir le broadcast de P0
+                    self.wait_broadcast_sync(0, "Test broadcast message")
 
             # Test de la section critique avec jeton : demander périodiquement
             # Décalage pour éviter les demandes simultanées

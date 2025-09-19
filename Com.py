@@ -347,12 +347,12 @@ class Com:
 
     # === MÉTHODES DE COMMUNICATION SYNCHRONE ===
 
-    def broadcastSync(self, payload, from_process_id):
+    def broadcastSyncObject(self, payload, from_process_id):
         """
-        Broadcast synchrone avec acquittements.
+        Broadcast synchrone avec barrière de synchronisation.
 
-        - Si ce processus est l'émetteur (from_process_id), il envoie à tous et attend les acquittements
-        - Sinon, il attend de recevoir le message de from_process_id
+        - Si ce processus est l'émetteur (from_process_id), il envoie le broadcast puis synchronise
+        - Sinon, il attend de recevoir le message puis synchronise
 
         Args:
             payload (str): Contenu à diffuser
@@ -362,32 +362,31 @@ class Com:
             # Ce processus est l'émetteur
             print(f"📢🔒 {self.process_name} starting synchronous broadcast")
 
-            # Envoyer le broadcast
-            self.broadcast(f"SYNC_BROADCAST:{payload}")
+            # Envoyer le broadcast asynchrone
+            self.broadcast(payload)
+            print(f"📢 {self.process_name} broadcast sent")
 
-            # Attendre les acquittements (simulation - dans un vrai système,
-            # il faudrait compter les ACK reçus)
-            print(f"⏳ {self.process_name} waiting for broadcast acknowledgments...")
-            # Simulation d'attente des ACK
-            from time import sleep
-            sleep(0.5)  # Temps pour que les autres reçoivent
-            print(f"✅ {self.process_name} broadcast synchronized!")
+            # Synchroniser tous les processus
+            self.synchronize()
+            print(f"✅ {self.process_name} broadcast completed and synchronized!")
         else:
             # Ce processus doit recevoir
-            print(
-                f"👂 {self.process_name} waiting for synchronous broadcast from P{from_process_id}")
+            print(f"👂 {self.process_name} waiting for broadcast from P{from_process_id}")
 
             # Attendre le message dans la mailbox
             while True:
                 message = self.wait_for_message(timeout=1.0)
-                if message and f"SYNC_BROADCAST:{payload}" in message.getPayload():
-                    print(
-                        f"✅ {self.process_name} received synchronous broadcast from P{from_process_id}")
+                if message and payload in message.getPayload():
+                    print(f"✅ {self.process_name} received broadcast from P{from_process_id}")
                     break
 
-    def sendToSync(self, payload, destination_id):
+            # Synchroniser avec tous les autres processus
+            self.synchronize()
+            print(f"✅ {self.process_name} broadcast received and synchronized!")
+
+    def sendToSyncObject(self, payload, destination_id):
         """
-        Envoi synchrone - bloque jusqu'à ce que le destinataire confirme la réception.
+        Envoi synchrone avec barrière de synchronisation.
 
         Args:
             payload (str): Message à envoyer
@@ -395,22 +394,17 @@ class Com:
         """
         print(f"📤🔒 {self.process_name} sending synchronously to P{destination_id}")
 
-        # Envoyer le message avec un marqueur sync
-        sync_payload = f"SYNC_MSG:{payload}:FROM_{self.process_id}"
-        self.sendTo(sync_payload, destination_id)
+        # Envoyer le message asynchrone
+        self.sendTo(payload, destination_id)
+        print(f"📤 {self.process_name} message sent to P{destination_id}")
 
-        # Attendre l'accusé de réception (simulation)
-        print(
-            f"⏳ {self.process_name} waiting for sync acknowledgment from P{destination_id}")
+        # Synchroniser tous les processus
+        self.synchronize()
+        print(f"✅ {self.process_name} send completed and synchronized!")
 
-        # Dans un vrai système, on attendrait un ACK spécifique
-        from time import sleep
-        sleep(0.3)  # Simulation de l'attente d'ACK
-        print(f"✅ {self.process_name} sync send completed to P{destination_id}")
-
-    def receiveFromSync(self, from_process_id):
+    def recevFromSyncObject(self, from_process_id):
         """
-        Réception synchrone - bloque jusqu'à recevoir un message de from_process_id.
+        Réception synchrone avec barrière de synchronisation.
 
         Args:
             from_process_id (int): ID du processus émetteur attendu
@@ -418,24 +412,22 @@ class Com:
         Returns:
             str: Le payload du message reçu
         """
-        print(
-            f"👂🔒 {self.process_name} waiting synchronously for message from P{from_process_id}")
+        print(f"👂🔒 {self.process_name} waiting for message from P{from_process_id}")
 
         # Attendre spécifiquement un message de from_process_id
         while True:
             message = self.wait_for_message(timeout=1.0)
             if message:
-                payload = message.getPayload()
-                if f"SYNC_MSG:" in payload and f"FROM_{from_process_id}" in payload:
-                    # Extraire le vrai payload
-                    actual_payload = payload.split(":")[1]
-                    print(
-                        f"✅ {self.process_name} received sync message from P{from_process_id}: {actual_payload}")
-
-                    # Envoyer ACK (simulation)
-                    # Dans un vrai système, on enverrait un ACK explicite
-
-                    return actual_payload
+                # Vérifier si le message vient du bon processus
+                if hasattr(message, 'getFrom') and message.getFrom() == from_process_id:
+                    payload = message.getPayload()
+                    print(f"✅ {self.process_name} received message from P{from_process_id}: {payload}")
+                    
+                    # Synchroniser tous les processus
+                    self.synchronize()
+                    print(f"✅ {self.process_name} message received and synchronized!")
+                    
+                    return payload
                 else:
                     # Pas le bon message, le remettre dans la mailbox
                     self.mailbox.deposit_message(message)
