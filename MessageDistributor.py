@@ -8,7 +8,6 @@ les messages vers les bonnes boîtes aux lettres selon leur destination.
 
 import threading
 from pyeventbus3.pyeventbus3 import *
-from LamportMessage import LamportMessage
 from BroadcastMessage import BroadcastMessage
 from MessageTo import MessageTo
 from CriticalSectionMessage import TokenMessage

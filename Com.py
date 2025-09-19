@@ -14,6 +14,7 @@ from CriticalSectionMessage import TokenMessage
 from CriticalSectionState import CriticalSectionState
 from Mailbox import Mailbox
 from MessageDistributor import get_message_distributor
+from ProcessIDManager import get_process_id_manager
 
 
 class Com:
@@ -27,18 +28,30 @@ class Com:
     - Synchronisation globale
     """
 
-    def __init__(self, process_id, process_name, total_processes):
+    def __init__(self, process_name=None, total_processes=None):
         """
-        Initialise le middleware de communication.
+        Initialise le middleware de communication avec numérotation automatique.
+
+        Le processus reçoit automatiquement un numéro unique consécutif
+        selon les spécifications du TP (numérotation commençant à 0).
 
         Args:
-            process_id (int): ID unique du processus propriétaire
-            process_name (str): Nom lisible du processus (ex: "P0", "P1")
-            total_processes (int): Nombre total de processus dans le système
+            process_name (str, optional): Nom du processus. Si None, généré automatiquement
+            total_processes (int, optional): Nombre total de processus. Si None, déterminé dynamiquement
         """
+        # === NUMÉROTATION AUTOMATIQUE CONSÉCUTIVE ===
+        id_manager = get_process_id_manager()
+        # Attribution automatique d'ID unique
+        self.process_id = id_manager.get_next_id()
+
         # Configuration de base
-        self.process_id = process_id
-        self.process_name = process_name
+        if process_name is None:
+            # Génération automatique du nom
+            self.process_name = f"P{self.process_id}"
+        else:
+            self.process_name = process_name
+
+        # Peut être None si déterminé dynamiquement
         self.total_processes = total_processes
         self.process_alive = True  # Référence à l'état du processus
 
@@ -47,11 +60,11 @@ class Com:
         self.lock = Lock()
 
         # === BOÎTE AUX LETTRES ===
-        self.mailbox = Mailbox(process_id, process_name)
+        self.mailbox = Mailbox(self.process_id, self.process_name)
 
         # Enregistrer la mailbox au distributeur
         distributor = get_message_distributor()
-        distributor.register_mailbox(process_id, self.mailbox)
+        distributor.register_mailbox(self.process_id, self.mailbox)
 
         # === GESTION DE LA SECTION CRITIQUE ===
         self.cs_condition = Condition(self.lock)  # Pour bloquer requestSC()
@@ -59,19 +72,19 @@ class Com:
         # === GESTION DE LA SECTION CRITIQUE ===
         # État initial : tous les processus sont au repos sauf P0
         self.cs_state = CriticalSectionState.IDLE
-        self.has_token = (process_id == 0)  # P0 commence avec le jeton
+        self.has_token = (self.process_id == 0)  # P0 commence avec le jeton
         self.wants_cs = False               # Pas de demande de SC au début
 
         # Si ce processus a le jeton au démarrage, changer son état
         if self.has_token:
             self.cs_state = CriticalSectionState.HAS_TOKEN
-            print(f"🎯 {process_name} starts WITH the token")
+            print(f"🎯 {self.process_name} starts WITH the token")
 
         # Note : Com ne s'enregistre PAS au bus d'événements
         # Seuls les Process doivent s'y enregistrer pour recevoir les messages
 
         print(
-            f"🔧 Com middleware initialized for {process_name} (ID: {process_id})")
+            f"🔧 Com middleware initialized for {self.process_name} (ID: {self.process_id})")
 
     def incclock(self):
         """
@@ -218,20 +231,6 @@ class Com:
             print(f"🔒 {self.process_name} ENTERS critical section")
             return True
 
-    def trySC(self):
-        """
-        Tentative d'entrée en section critique.
-
-        Returns:
-            bool: True si l'entrée a réussi, False sinon
-        """
-        # Vérifier toutes les conditions d'entrée
-        if self.has_token and self.wants_cs and self.cs_state == CriticalSectionState.HAS_TOKEN:
-            self.cs_state = CriticalSectionState.IN_CS
-            print(f"🔒 {self.process_name} ENTERS critical section with TOKEN")
-            return True
-        return False
-
     def releaseSC(self):
         """
         Sortie de la section critique et transmission du jeton.
@@ -246,9 +245,24 @@ class Com:
         # Transmettre le jeton au processus suivant
         self._pass_token()
 
+    def _get_total_processes(self):
+        """
+        Obtient le nombre total de processus de manière dynamique.
+
+        Returns:
+            int: Nombre total de processus actuellement enregistrés
+        """
+        if self.total_processes is not None:
+            return self.total_processes
+        else:
+            # Mode dynamique : obtenir depuis le gestionnaire d'IDs
+            id_manager = get_process_id_manager()
+            return id_manager.get_assigned_count()
+
     def _pass_token(self):
         """Passer le jeton au processus suivant dans l'anneau"""
-        next_process_id = (self.process_id + 1) % self.total_processes
+        total_procs = self._get_total_processes()
+        next_process_id = (self.process_id + 1) % total_procs
 
         # Incrémenter l'horloge pour cet événement local d'envoi
         current_clock = self.incclock()

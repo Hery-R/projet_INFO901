@@ -10,13 +10,10 @@ Ce module implémente un processus dans un système distribué avec :
 
 from threading import Thread
 from time import sleep
-import threading
 
-from LamportMessage import LamportMessage
 from BroadcastMessage import BroadcastMessage
 from MessageTo import MessageTo
 from CriticalSectionMessage import TokenMessage
-from CriticalSectionState import CriticalSectionState
 from Com import Com
 from pyeventbus3.pyeventbus3 import *
 
@@ -31,25 +28,30 @@ class Process(Thread):
     - Délégation de la communication au middleware Com
     """
 
-    # Compteur global pour assigner des IDs uniques aux processus
-    nbProcessCreated = 0
-
-    def __init__(self, name, npProcess):
+    def __init__(self, name=None, npProcess=None):
         """
-        Initialise un nouveau processus dans le système distribué.
+        Initialise un nouveau processus avec numérotation automatique.
+
+        Le processus se connecte au communicateur qui lui attribue
+        automatiquement un numéro unique consécutif.
 
         Args:
-            name (str): Nom du processus (ex: "P0", "P1", "P2")
-            npProcess (int): Nombre total de processus dans le système
+            name (str, optional): Nom du processus. Si None, généré automatiquement
+            npProcess (int, optional): Nombre total de processus. Si None, déterminé dynamiquement
         """
         Thread.__init__(self)
 
-        # Configuration de base du processus
-        self.npProcess = npProcess                    # Nombre total de processus
-        self.myId = Process.nbProcessCreated          # ID unique de ce processus
-        Process.nbProcessCreated += 1                 # Incrémenter le compteur global
-        self.myProcessName = name                     # Nom lisible du processus
-        self.setName("MainThread-" + name)           # Nom du thread
+        # === CONNEXION ET NUMÉROTATION AUTOMATIQUE ===
+        # Le middleware Com attribue automatiquement un ID unique et consécutif
+        self.com = Com(process_name=name, total_processes=npProcess)
+
+        # Configuration de base du processus (récupérée depuis Com)
+        self.npProcess = npProcess if npProcess is not None else self.com._get_total_processes()
+        # ID attribué automatiquement par Com
+        self.myId = self.com.process_id
+        # Nom du processus (généré si nécessaire)
+        self.myProcessName = self.com.process_name
+        self.setName("MainThread-" + self.myProcessName)  # Nom du thread
 
         # Note : Process ne s'enregistre plus au PyBus
         # Les messages sont maintenant gérés via la mailbox dans Com
@@ -59,11 +61,10 @@ class Process(Thread):
         # Liste des threads de section critique actifs
         self.active_cs_threads = []
 
-        # Middleware de communication
-        self.com = Com(self.myId, self.myProcessName, self.npProcess)
-        # Partager l'état du processus avec Com
-        # Démarrer le thread du processus
+        # Partager l'état du processus avec Com (déjà créé plus haut)
         self.com.process_alive = lambda: self.alive
+
+        # Démarrer le thread du processus
         self.start()
 
     # === TRAITEMENT DES MESSAGES VIA MAILBOX ===
@@ -75,7 +76,7 @@ class Process(Thread):
         Cette méthode remplace les anciens handlers PyBus.
         Elle récupère les messages de la boîte aux lettres et les traite.
         """
-        while self.com.has_messages():
+        while self.com.has_messages() and self.alive:
             message = self.com.get_message()
             if message:
                 self._handle_message(message)
@@ -156,10 +157,6 @@ class Process(Thread):
         """Demande d'accès à la section critique via Com"""
         self.com.requestSC()
 
-    def enter_critical_section(self):
-        """Tentative d'entrée en section critique via Com"""
-        return self.com.trySC()
-
     def exit_critical_section(self):
         """Sortie de la section critique via Com"""
         self.com.releaseSC()
@@ -188,48 +185,6 @@ class Process(Thread):
 
     # Les handlers PyBus ont été remplacés par le traitement via mailbox
 
-    def process_mailbox_messages(self):
-        """Traite tous les messages en attente dans la mailbox"""
-        while self.com.has_messages() and self.alive:
-            message = self.com.get_message()
-            if message:
-                self.handle_message(message)
-
-    def handle_message(self, message):
-        """Traite un message spécifique selon son type"""
-        from BroadcastMessage import BroadcastMessage
-        from MessageTo import MessageTo
-        from CriticalSectionMessage import TokenMessage
-
-        # Mettre à jour l'horloge de Lamport
-        old_clock, new_clock = self.com.update_clock_on_receive(
-            message.getTimestamp())
-
-        if isinstance(message, TokenMessage):
-            # Traitement des jetons
-            if message.getToProcessId() == self.myId:
-                should_pass_immediately = self.com.receive_token(
-                    message.getFromProcessId(),
-                    message.getTimestamp()
-                )
-
-                # Si on ne veut pas la section critique, passer le jeton immédiatement
-                if should_pass_immediately and self.alive:
-                    from time import sleep
-                    sleep(0.1)
-                    self.com._pass_token()
-
-        elif isinstance(message, BroadcastMessage):
-            # Traitement des broadcasts
-            print(
-                f"{self.getName()} received broadcast: {message.getPayload()} (clock: {new_clock})")
-
-        elif isinstance(message, MessageTo):
-            # Traitement des messages dirigés
-            if message.getTo() == self.myId:
-                print(
-                    f"{self.getName()} received directed message: {message.getPayload()} (clock: {new_clock})")
-
     def run(self):
         loop = 0
         while self.alive:
@@ -246,6 +201,13 @@ class Process(Thread):
 
             print(
                 f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {cs_status['state'].value} - {token_status} - {wants_status}")
+
+            # Test de synchronisation : processus arrivent de manière décalée
+            if (loop == 2 and self.myId == 0) or (loop == 3 and self.myId == 1) or (loop == 4 and self.myId == 2):
+                print(
+                    f"🔄 {self.getName()} calling synchronize() at loop {loop}...")
+                self.synchronize()
+                print(f"✅ {self.getName()} synchronized! Continuing...")
 
             # Test de la section critique avec jeton : demander périodiquement
             # Décalage pour éviter les demandes simultanées

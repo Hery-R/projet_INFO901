@@ -10,6 +10,7 @@ from time import sleep
 from Process import Process
 from Com import Com
 from MessageDistributor import get_message_distributor, shutdown_message_distributor
+from ProcessIDManager import reset_process_id_manager
 
 
 def launch(nbProcess, runningTime=5):
@@ -23,18 +24,25 @@ def launch(nbProcess, runningTime=5):
     print(
         f"🚀 Lancement de {nbProcess} processus pour {runningTime} secondes...")
 
+    # Reset de la numérotation pour garantir que ça commence à 0
+    reset_process_id_manager()
+
     # Initialiser la synchronisation globale
     Com.initialize_sync(nbProcess)
 
     # Initialiser le distributeur de messages
     distributor = get_message_distributor()
 
-    # Création et démarrage de tous les processus
+    # Création et démarrage de tous les processus avec numérotation automatique
     processes = []
     for i in range(nbProcess):
-        process_name = "P" + str(i)
-        processes.append(Process(process_name, nbProcess))
-        print(f"✅ Processus {process_name} créé (ID: {i})")
+        # Les processus reçoivent automatiquement leur numéro (0, 1, 2...)
+        # Plus besoin de spécifier l'ID manuellement - numérotation automatique !
+        # Numérotation automatique consécutive
+        process = Process(npProcess=nbProcess)
+        processes.append(process)
+        print(
+            f"✅ Processus {process.myProcessName} créé avec ID automatique: {process.myId}")
 
     print(f"⏱️  Simulation en cours pendant {runningTime} secondes...\n")
 

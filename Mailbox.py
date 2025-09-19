@@ -8,7 +8,6 @@ aux processus de récupérer leurs messages à leur rythme.
 
 from threading import Lock, Condition
 from collections import deque
-from LamportMessage import LamportMessage
 
 
 class Mailbox:
@@ -107,18 +106,6 @@ class Mailbox:
                 f"📬⏰ {self.owner_name} waited and got message: {message.getPayload()[:50]}...")
             return message
 
-    def peek_message(self):
-        """
-        Regarde le prochain message sans le retirer.
-
-        Returns:
-            LamportMessage | None: Le prochain message ou None
-        """
-        with self.lock:
-            if len(self.messages) > 0:
-                return self.messages[0]
-            return None
-
     def get_message_count(self):
         """
         Retourne le nombre de messages en attente.
@@ -128,14 +115,3 @@ class Mailbox:
         """
         with self.lock:
             return len(self.messages)
-
-    def clear(self):
-        """
-        Vide la boîte aux lettres (pour nettoyage).
-        """
-        with self.lock:
-            count = len(self.messages)
-            self.messages.clear()
-            if count > 0:
-                print(
-                    f"📬🗑️ Cleared {count} messages from {self.owner_name}'s mailbox")
