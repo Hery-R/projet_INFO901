@@ -101,7 +101,7 @@ class Process(Thread):
         else:
             # Message générique
             print(
-                f"{self.getName()} processed generic message: {message.getPayload()} (clock: {old_clock} → {new_clock})")
+                f"{self.name} processed generic message: {message.getPayload()} (clock: {old_clock} → {new_clock})")
 
     def _handle_token_message(self, message):
         """Traite un message de jeton."""
@@ -120,7 +120,7 @@ class Process(Thread):
         old_clock, new_clock = self.com.update_clock_on_receive(
             message.getTimestamp())
         print(
-            f"{self.getName()} received broadcast: {message.getPayload()} (local clock: {new_clock})")
+            f"{self.name} received broadcast: {message.getPayload()} (local clock: {new_clock})")
 
     def _handle_directed_message(self, message):
         """Traite un message dirigé."""
@@ -128,7 +128,7 @@ class Process(Thread):
             old_clock, new_clock = self.com.update_clock_on_receive(
                 message.getTimestamp())
             print(
-                f"{self.getName()} received directed message: {message.getPayload()} (clock: {new_clock})")
+                f"{self.name} received directed message: {message.getPayload()} (clock: {new_clock})")
 
     def broadcast(self, payload):
         """
@@ -200,7 +200,7 @@ class Process(Thread):
             wants_status = "WANTS_CS" if cs_status['wants_cs'] else "NO_REQUEST"
 
             print(
-                f"{self.getName()} Loop: {loop} (clock {current_clock}) - State: {cs_status['state'].value} - {token_status} - {wants_status}")
+                f"{self.name} Loop: {loop} (clock {current_clock}) - State: {cs_status['state'].value} - {token_status} - {wants_status}")
 
             # Test des méthodes de communication synchrone avec barrière
             if loop == 2:
@@ -216,7 +216,7 @@ class Process(Thread):
             # Test de la section critique avec jeton : demander périodiquement
             # Décalage pour éviter les demandes simultanées
             if loop % 7 == self.myId and not cs_status['wants_cs']:
-                print(f"🎯 {self.getName()} requesting critical section...")
+                print(f"🎯 {self.name} requesting critical section...")
                 # Attention: requestSC() est maintenant BLOQUANT selon les spécifications
                 # Il faudra le lancer dans un thread séparé pour éviter de bloquer la boucle principale
                 import threading
@@ -230,22 +230,22 @@ class Process(Thread):
                             return
                         # Simuler du travail en section critique
                         print(
-                            f"{self.getName()} *** WORKING IN CRITICAL SECTION ***")
+                            f"{self.name} *** WORKING IN CRITICAL SECTION ***")
                         sleep(1.0)  # Travail en section critique
                         self.exit_critical_section()
                     except Exception as e:
                         print(
-                            f"❌ {self.getName()} error in critical section: {e}")
+                            f"❌ {self.name} error in critical section: {e}")
 
                 cs_thread = threading.Thread(
-                    target=request_cs, name=f"CS-{self.getName()}")
+                    target=request_cs, name=f"CS-{self.name}")
                 cs_thread.daemon = True  # Thread daemon s'arrête avec le programme principal
                 cs_thread.start()
                 self.active_cs_threads.append(cs_thread)
 
             sleep(0.8)
             loop += 1
-        print(f"{self.getName()} stopped")
+        print(f"{self.name} stopped")
 
     def stop(self):
         self.alive = False
