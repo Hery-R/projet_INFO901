@@ -1,6 +1,7 @@
 """
 MessageDistributor.py - Distributeur central de messages
 Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Cette classe s'enregistre au bus PyBus et distribue automatiquement
 les messages vers les bonnes boîtes aux lettres selon leur destination.

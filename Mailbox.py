@@ -1,6 +1,7 @@
 """
 Mailbox.py - Boîte aux lettres pour messages asynchrones
 Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Cette classe implémente une boîte aux lettres thread-safe permettant
 aux processus de récupérer leurs messages à leur rythme.

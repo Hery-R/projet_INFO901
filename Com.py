@@ -1,6 +1,7 @@
 """
 Com.py - Classe middleware pour la communication dans le système distribué
-Auteur: Refactorisation du code de RASOAMIARAMANANA Hery ny aina
+Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Cette classe centralise toute la logique de communication qui était
 précédemment dans Process.py, pour une meilleure séparation des responsabilités.
@@ -371,13 +372,15 @@ class Com:
             print(f"✅ {self.process_name} broadcast completed and synchronized!")
         else:
             # Ce processus doit recevoir
-            print(f"👂 {self.process_name} waiting for broadcast from P{from_process_id}")
+            print(
+                f"👂 {self.process_name} waiting for broadcast from P{from_process_id}")
 
             # Attendre le message dans la mailbox
             while True:
                 message = self.wait_for_message(timeout=1.0)
                 if message and payload in message.getPayload():
-                    print(f"✅ {self.process_name} received broadcast from P{from_process_id}")
+                    print(
+                        f"✅ {self.process_name} received broadcast from P{from_process_id}")
                     break
 
             # Synchroniser avec tous les autres processus
@@ -421,12 +424,14 @@ class Com:
                 # Vérifier si le message vient du bon processus
                 if hasattr(message, 'getFrom') and message.getFrom() == from_process_id:
                     payload = message.getPayload()
-                    print(f"✅ {self.process_name} received message from P{from_process_id}: {payload}")
-                    
+                    print(
+                        f"✅ {self.process_name} received message from P{from_process_id}: {payload}")
+
                     # Synchroniser tous les processus
                     self.synchronize()
-                    print(f"✅ {self.process_name} message received and synchronized!")
-                    
+                    print(
+                        f"✅ {self.process_name} message received and synchronized!")
+
                     return payload
                 else:
                     # Pas le bon message, le remettre dans la mailbox

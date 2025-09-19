@@ -1,6 +1,7 @@
 """
 Launcher.py - Point d'entrée principal du système distribué
 Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Ce module lance et coordonne l'exécution de plusieurs processus
 dans un système distribué simulé avec horloges de Lamport.

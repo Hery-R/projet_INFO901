@@ -1,6 +1,7 @@
 """
 Process.py - Processus principal du système distribué refactorisé
-Auteur: RASOAMIARAMANANA Hery ny aina (refactorisé)
+Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Ce module implémente un processus dans un système distribué avec :
 - Délégation de la communication au middleware Com

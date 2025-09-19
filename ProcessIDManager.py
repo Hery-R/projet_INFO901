@@ -1,6 +1,7 @@
 """
 ProcessIDManager.py - Gestionnaire de numérotation automatique des processus
 Auteur: RASOAMIARAMANANA Hery ny aina
+Auteur: ROUSSEAU Maxime
 
 Cette classe gère la numérotation automatique et consécutive des processus
 sans utiliser de variables de classe, conformément aux spécifications du TP.
