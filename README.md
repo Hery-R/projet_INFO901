@@ -2,8 +2,8 @@
 
 ## Auteurs
 
-RASOAMIARAMANANA Hery ny aina
-ROUSSEAU Maxime
+- RASOAMIARAMANANA Hery ny aina
+- ROUSSEAU Maxime
 
 ## Vue d'ensemble
 
