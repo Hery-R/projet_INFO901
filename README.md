@@ -7,7 +7,7 @@
 
 ## Vue d'ensemble
 
-Ce projet implemente un systeme distribue complet avec middleware de communication, respectant les specifications du TP INFO901. Le systeme utilise une architecture a base de bus d'evenements (PyBus) pour la communication asynchrone entre processus, avec gestion automatique de la synchronisation temporelle (horloges de Lamport) et exclusion mutuelle distribuee (algorithme en anneau avec jeton).
+Ce projet implemente un systeme distribue complet avec middleware de communication. Le systeme utilise une architecture a base de bus d'evenements (PyBus) pour la communication asynchrone entre processus, avec gestion automatique de la synchronisation temporelle (horloges de Lamport) et exclusion mutuelle distribuee (algorithme en anneau avec jeton).
 
 ## Architecture Generale
 
