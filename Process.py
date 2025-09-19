@@ -204,12 +204,12 @@ class Process(Thread):
 
             # Test des méthodes de communication synchrone avec barrière
             if loop == 2:
-                print(f"🧪 {self.getName()} testing synchronous communication...")
+                print(f"🧪 {self.name} testing synchronous communication...")
                 if self.myId == 0:  # P0 est l'émetteur
-                    print(f"📢 {self.getName()} testing broadcast sync")
+                    print(f"📢 {self.name} testing broadcast sync")
                     self.broadcast_sync("Test broadcast message")
                 else:  # P1 et P2 participent au broadcast sync
-                    print(f"👂 {self.getName()} participating in broadcast sync test")
+                    print(f"👂 {self.name} participating in broadcast sync test")
                     # P1 et P2 attendent de recevoir le broadcast de P0
                     self.wait_broadcast_sync(0, "Test broadcast message")
 
